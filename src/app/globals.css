@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* The UI is dark-themed throughout (zinc components, light text), so force a
+   dark base regardless of the OS prefers-color-scheme. Without this, light-mode
+   systems get a white body that hides the light text (e.g. the Watchlist). */
+:root {
+  --background: #09090b; /* zinc-950 */
+  --foreground: #ededed;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
