@@ -120,6 +120,7 @@ export interface ProjStats {
   woba?: number;
   // pitcher
   ip?: number;
+  gs?: number; // games started (role/volume indicator)
   era?: number;
   whip?: number;
   sv?: number;
@@ -178,8 +179,12 @@ export interface FreeAgentStats {
   projRaterEspn?: number;
   /** Projected ESPN Player Rater (RoS), selected system — value remaining (raw RoS). */
   projRaterEspnRem?: number;
+  /** ESPN's ACTUAL season-to-date Player Rater (published), joined by name. Not a
+   * projection (constant across the projection-system toggle). */
+  espnPrSeason?: number;
   projPa?: number; // hitter (projected plate appearances)
   projIp?: number; // pitcher
+  projGs?: number; // pitcher (games started)
   projEra?: number; // pitcher
   projWhip?: number; // pitcher
   projSv?: number; // pitcher (saves)

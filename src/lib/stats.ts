@@ -354,7 +354,7 @@ async function fetchFgProjections(
       };
       const ptsCbs = ip !== undefined ? roundPts(cbsPitcherPoints(score)) : undefined;
       return {
-        disp: { ip, era: num(r.ERA), whip: num(r.WHIP), sv, ptsCbs },
+        disp: { ip, gs: num(r.GS), era: num(r.ERA), whip: num(r.WHIP), sv, ptsCbs },
         score,
         w,
         ip,
@@ -529,6 +529,7 @@ function blendProjections(
     const prRem = raterModel && ipW > 0 ? pitcherRater(raterModel, pInput, 1) : undefined;
     return {
       ip: wsum((c) => c.ip) / W,
+      gs: wsum((c) => c.disp.gs) / W,
       sv: wsum((c) => c.disp.sv) / W,
       era: ipW > 0 ? (9 * wsum((c) => c.er)) / ipW : undefined,
       whip: ipW > 0 ? wsum((c) => c.hbb) / ipW : undefined,
@@ -671,11 +672,14 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
     });
 
   // Fit the ESPN Player Rater model first (best-effort) so the projection
-  // fetchers can turn each system's RoS projection into a ROS Player Rater.
-  const raterModel = await fetchAndFitEspnRater().catch((e) => {
-    console.warn("[stats] espn rater fit failed:", e instanceof Error ? e.message : e);
+  // fetchers can turn each system's RoS projection into a ROS Player Rater. Also
+  // carries ESPN's ACTUAL season-to-date PR (joined by name into the index below).
+  const espn = await fetchAndFitEspnRater().catch((e) => {
+    console.warn("[stats] espn rater fetch failed:", e instanceof Error ? e.message : e);
     return null;
   });
+  const raterModel = espn?.model ?? null;
+  const espnSeasonPr = espn?.seasonPrByName ?? new Map<string, { pr: number; team: string }>();
   if (raterModel) {
     console.log(
       `[stats] ESPN rater fit: hitters R²=${raterModel.hitterR2.toFixed(4)} (n=${raterModel.hitterN}), ` +
@@ -716,6 +720,16 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
 
   const pitchers = buildNameMap([expPit, rvPit, pctPit, fgLeadPit, fgProjPit]);
   const hitters = buildNameMap([expBat, rvBat, pctBat, fgLeadBat, fgProjBat]);
+
+  // Attach ESPN's actual season-to-date Player Rater by normalized name (team-
+  // guarded against same-name collisions). Applies to both kinds (two-way players
+  // carry ESPN's single combined rating on each row).
+  for (const map of [hitters, pitchers]) {
+    for (const [key, rec] of map) {
+      const e = espnSeasonPr.get(key);
+      if (e && !teamsConflict(rec.team, e.team)) rec.stats.espnPrSeason = roundPts(e.pr);
+    }
+  }
 
   return {
     lookup(name, kind, team) {

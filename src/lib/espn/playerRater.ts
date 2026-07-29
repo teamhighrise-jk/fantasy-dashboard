@@ -1,4 +1,6 @@
 import { getEspnConfig, type EspnConfig } from "@/lib/config";
+import { normalizeName } from "@/lib/teams";
+import { proTeamAbbrev } from "./constants";
 
 /**
  * Reverse-engineered ESPN "Player Rater" for a 5x5 roto league.
@@ -38,6 +40,13 @@ export interface RaterModel {
   pitcherR2: number;
   hitterN: number;
   pitcherN: number;
+}
+
+export interface EspnRaterData {
+  /** Fitted projection model (null if the fit couldn't run — too few samples). */
+  model: RaterModel | null;
+  /** ESPN's ACTUAL season-to-date Player Rater by normalized name (+ team guard). */
+  seasonPrByName: Map<string, { pr: number; team: string }>;
 }
 
 /** Rest-of-season projection components for a hitter (from our blend). */
@@ -118,7 +127,7 @@ const nz = (v: number | undefined) => (typeof v === "number" && Number.isFinite(
  * stats) and fit the hitter/pitcher rating models. Best-effort: returns null if
  * ESPN isn't configured or the request fails (callers just show a blank column).
  */
-export async function fetchAndFitEspnRater(): Promise<RaterModel | null> {
+export async function fetchAndFitEspnRater(): Promise<EspnRaterData | null> {
   const cfg = getEspnConfig();
   if (!cfg) return null;
 
@@ -152,9 +161,19 @@ export async function fetchAndFitEspnRater(): Promise<RaterModel | null> {
   const HY: number[] = [];
   const PX: number[][] = [];
   const PY: number[] = [];
+  // ESPN's actual season-to-date Player Rater, by normalized name (for the
+  // reference column). Built for every rated player, independent of the fit.
+  const seasonPrByName = new Map<string, { pr: number; team: string }>();
   for (const e of entries) {
-    const s = actual(e);
     const y = e.ratings?.["0"]?.totalRating;
+    const nm = e.player?.fullName;
+    if (typeof y === "number" && nm) {
+      const key = normalizeName(nm);
+      if (!seasonPrByName.has(key)) {
+        seasonPrByName.set(key, { pr: y, team: proTeamAbbrev((e.player as { proTeamId?: number })?.proTeamId ?? 0) });
+      }
+    }
+    const s = actual(e);
     if (!s || typeof y !== "number") continue;
     const ab = nz(s[HIT.AB]);
     const outs = nz(s[PIT.OUTS]);
@@ -170,18 +189,21 @@ export async function fetchAndFitEspnRater(): Promise<RaterModel | null> {
   }
 
   if (HX.length < 30 || PX.length < 30) {
-    console.warn(`[espn rater] too few samples (H=${HX.length} P=${PX.length}) — skipping`);
-    return null;
+    console.warn(`[espn rater] too few fit samples (H=${HX.length} P=${PX.length}) — no projection model`);
+    return { model: null, seasonPrByName };
   }
   const h = ols(HX, HY);
   const p = ols(PX, PY);
   return {
-    hitter: h.beta,
-    pitcher: p.beta,
-    hitterR2: h.r2,
-    pitcherR2: p.r2,
-    hitterN: HX.length,
-    pitcherN: PX.length,
+    model: {
+      hitter: h.beta,
+      pitcher: p.beta,
+      hitterR2: h.r2,
+      pitcherR2: p.r2,
+      hitterN: HX.length,
+      pitcherN: PX.length,
+    },
+    seasonPrByName,
   };
 }
 

@@ -68,6 +68,7 @@ export function resolveProjection(
     projOps: p.ops,
     projWoba: p.woba,
     projIp: p.ip,
+    projGs: p.gs,
     projEra: p.era,
     projWhip: p.whip,
     projSv: p.sv,

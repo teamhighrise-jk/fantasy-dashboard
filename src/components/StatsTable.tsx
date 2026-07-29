@@ -64,6 +64,14 @@ const CBS_PTS: StatCol = {
   tooltip: () =>
     "Projected CBS fantasy points (rest-of-season), from the selected projection system. Blown saves / no-hitters / perfect games aren't projected; total-bases-allowed is estimated.",
 };
+const ESPN_SEASON: StatCol = {
+  label: "Szn",
+  key: "espnPrSeason",
+  fmt: dec1,
+  lowerBetter: false,
+  tooltip: () =>
+    "ESPN's actual season-to-date Player Rater (the published number), joined by name. Not a projection — shown for reference next to the projected Pace/Rem.",
+};
 const ESPN_PACE: StatCol = {
   label: "Pace",
   key: "projRaterEspn",
@@ -84,7 +92,7 @@ const ESPN_REM: StatCol = {
 function valueGroups(cols: ValueCol[]): StatGroup[] {
   const out: StatGroup[] = [];
   if (cols.includes("cbs")) out.push({ label: "Pts ROS", cols: [CBS_PTS] });
-  if (cols.includes("espn")) out.push({ label: "PR ROS", cols: [ESPN_PACE, ESPN_REM] });
+  if (cols.includes("espn")) out.push({ label: "Player Rater", cols: [ESPN_SEASON, ESPN_PACE, ESPN_REM] });
   return out;
 }
 
@@ -181,6 +189,7 @@ const GROUPS: Record<PlayerKind, StatGroup[]> = {
       label: "Projections (RoS)",
       cols: [
         { label: "IP", key: "projIp", fmt: dec1, lowerBetter: false },
+        { label: "GS", key: "projGs", fmt: int, lowerBetter: false },
         { label: "ERA", key: "projEra", fmt: dec2, lowerBetter: true },
         { label: "WHIP", key: "projWhip", fmt: dec2, lowerBetter: true },
         { label: "SV", key: "projSv", fmt: int, lowerBetter: false },
@@ -205,10 +214,10 @@ export interface StatCatalogEntry {
 export const STAT_CATALOG: StatCatalogEntry[] = (() => {
   const seen = new Set<string>();
   const out: StatCatalogEntry[] = [];
-  // Lead with the ROS value columns so they're filterable too.
-  for (const c of [CBS_PTS, ESPN_PACE, ESPN_REM]) {
+  // Lead with the value columns so they're filterable too.
+  for (const c of [CBS_PTS, ESPN_SEASON, ESPN_PACE, ESPN_REM]) {
     seen.add(c.key);
-    out.push({ key: c.key, label: c.label, group: "ROS Value" });
+    out.push({ key: c.key, label: c.label, group: c === CBS_PTS ? "Pts ROS" : "Player Rater" });
   }
   for (const kind of ["hitter", "pitcher"] as PlayerKind[]) {
     for (const g of GROUPS[kind]) {
