@@ -190,6 +190,7 @@ export default function FreeAgentsPage() {
                       watchedIds={watched}
                       statFilters={activeFilters}
                       projSystem={projSystem}
+                      valueCols={[lg.provider]}
                     />
                     <FreeAgentStatsTable
                       title="Top Pitchers"
@@ -200,6 +201,7 @@ export default function FreeAgentsPage() {
                       watchedIds={watched}
                       statFilters={activeFilters}
                       projSystem={projSystem}
+                      valueCols={[lg.provider]}
                     />
                   </div>
                 </section>

@@ -75,10 +75,22 @@ export default function TeamCard({ team, projSystem }: { team: NormalizedTeam; p
       </header>
       <div className="space-y-4">
         {hitters.length > 0 && (
-          <StatsTable title="Hitters" kind="hitter" leadingLabel="Slot" rows={toRows(hitters, projSystem)} />
+          <StatsTable
+            title="Hitters"
+            kind="hitter"
+            leadingLabel="Slot"
+            rows={toRows(hitters, projSystem)}
+            valueCols={[team.provider]}
+          />
         )}
         {pitchers.length > 0 && (
-          <StatsTable title="Pitchers" kind="pitcher" leadingLabel="Slot" rows={toRows(pitchers, projSystem)} />
+          <StatsTable
+            title="Pitchers"
+            kind="pitcher"
+            leadingLabel="Slot"
+            rows={toRows(pitchers, projSystem)}
+            valueCols={[team.provider]}
+          />
         )}
       </div>
     </section>

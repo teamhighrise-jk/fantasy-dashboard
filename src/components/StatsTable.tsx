@@ -49,26 +49,47 @@ const pctlCol = (label: string, key: StatKey, what: string): StatCol => ({
   tooltip: () => `${what} — Savant percentile rank (0–100, higher=better)`,
 });
 
-// Projected fantasy points (rest-of-season), run through a league's scoring.
-// CBS today; ESPN slots in beside it (phase B). Follows the projection-system
-// toggle (blend by default), like the other proj* columns.
-const ptsRosGroup: StatGroup = {
-  label: "Pts ROS",
-  cols: [
-    {
-      label: "CBS",
-      key: "projPtsCbs",
-      fmt: dec1,
-      lowerBetter: false,
-      tooltip: () =>
-        "Projected CBS fantasy points (rest-of-season), from the selected projection system. Blown saves / no-hitters / perfect games aren't projected; total-bases-allowed is estimated.",
-    },
-  ],
+// Rest-of-season league VALUE, run through each league's scoring — shown per the
+// `valueCols` prop (CBS on CBS views, ESPN on ESPN views, both on the Watchlist).
+// Follows the projection-system toggle (blend by default), like the other proj*.
+export type ValueCol = "cbs" | "espn";
+// CBS = league fantasy points (one column). ESPN = 5x5-roto Player Rater, shown
+// two ways: PACE (full-season pace — a player at his projected rate reads ~his
+// current ESPN PR) and REM (value remaining — the raw rest-of-season projection).
+const CBS_PTS: StatCol = {
+  label: "CBS",
+  key: "projPtsCbs",
+  fmt: dec1,
+  lowerBetter: false,
+  tooltip: () =>
+    "Projected CBS fantasy points (rest-of-season), from the selected projection system. Blown saves / no-hitters / perfect games aren't projected; total-bases-allowed is estimated.",
 };
+const ESPN_PACE: StatCol = {
+  label: "Pace",
+  key: "projRaterEspn",
+  fmt: dec1,
+  lowerBetter: false,
+  tooltip: () =>
+    "ESPN Player Rater (5x5 roto), full-season PACE — the projection scaled to season-to-date volume, so a player continuing at his projected rate reads ~his current ESPN Player Rater. Reverse-engineered from ESPN's live rater.",
+};
+const ESPN_REM: StatCol = {
+  label: "Rem",
+  key: "projRaterEspnRem",
+  fmt: dec1,
+  lowerBetter: false,
+  tooltip: () =>
+    "ESPN Player Rater (5x5 roto), value REMAINING — the actual rest-of-season projection (naturally smaller later in the season, reflecting fewer games left to accrue).",
+};
+/** Build the leading value group(s) for the requested leagues (one group each). */
+function valueGroups(cols: ValueCol[]): StatGroup[] {
+  const out: StatGroup[] = [];
+  if (cols.includes("cbs")) out.push({ label: "Pts ROS", cols: [CBS_PTS] });
+  if (cols.includes("espn")) out.push({ label: "PR ROS", cols: [ESPN_PACE, ESPN_REM] });
+  return out;
+}
 
 const GROUPS: Record<PlayerKind, StatGroup[]> = {
   hitter: [
-    ptsRosGroup,
     {
       label: "Season",
       cols: [
@@ -119,7 +140,6 @@ const GROUPS: Record<PlayerKind, StatGroup[]> = {
     },
   ],
   pitcher: [
-    ptsRosGroup,
     {
       label: "Season",
       cols: [
@@ -185,6 +205,11 @@ export interface StatCatalogEntry {
 export const STAT_CATALOG: StatCatalogEntry[] = (() => {
   const seen = new Set<string>();
   const out: StatCatalogEntry[] = [];
+  // Lead with the ROS value columns so they're filterable too.
+  for (const c of [CBS_PTS, ESPN_PACE, ESPN_REM]) {
+    seen.add(c.key);
+    out.push({ key: c.key, label: c.label, group: "ROS Value" });
+  }
   for (const kind of ["hitter", "pitcher"] as PlayerKind[]) {
     for (const g of GROUPS[kind]) {
       for (const c of g.cols) {
@@ -309,6 +334,7 @@ export default function StatsTable({
   watchedIds,
   statFilters,
   collapsible,
+  valueCols = ["cbs", "espn"],
 }: {
   title: string;
   kind: PlayerKind;
@@ -328,8 +354,14 @@ export default function StatsTable({
   statFilters?: StatFilter[];
   /** When true, the title becomes a toggle that rolls the whole table up/down. */
   collapsible?: boolean;
+  /** Which league ROS-value columns to show as the leading group (CBS pts / ESPN rater). */
+  valueCols?: ValueCol[];
 }) {
-  const groups = GROUPS[kind];
+  const valueKey = valueCols.join(",");
+  const groups = useMemo(() => {
+    return [...valueGroups(valueCols), ...GROUPS[kind]];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, valueKey]);
   const [collapsed, setCollapsed] = useState(false);
   // Keys that are actual columns for this kind — a filter on any other key is ignored here.
   const colKeys = useMemo(

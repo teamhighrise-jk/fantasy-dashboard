@@ -55,6 +55,8 @@ export function resolveProjection(
   return {
     ...stats,
     projPtsCbs: p.ptsCbs,
+    projRaterEspn: p.raterEspn,
+    projRaterEspnRem: p.raterEspnRem,
     projPa: p.pa,
     projR: p.r,
     projHr: p.hr,

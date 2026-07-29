@@ -1,6 +1,12 @@
 import type { FreeAgentStats, PlayerKind, PlayerStatsEntry, ProjStats, ProjSystem } from "@/lib/types";
 import { normalizeName, teamsConflict } from "@/lib/teams";
 import { cbsHitterPoints, cbsPitcherPoints, roundPts, type ScoreCounts } from "@/lib/cbs/scoring";
+import {
+  fetchAndFitEspnRater,
+  hitterRater,
+  pitcherRater,
+  type RaterModel,
+} from "@/lib/espn/playerRater";
 
 /**
  * Advanced-stats sourcing for the Free Agents page.
@@ -289,6 +295,8 @@ interface ProjComp {
   disp: ProjStats; // this system's own displayed stats
   // Raw counting stats fed to the CBS scoring (blended separately from rates).
   score: ScoreCounts;
+  // Projected wins (pitcher) — an ESPN-rater input not used by CBS scoring.
+  w?: number;
   // hitter components
   pa?: number;
   ab?: number;
@@ -302,7 +310,13 @@ interface ProjComp {
   hbb?: number; // H + BB
 }
 
-async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, RawRecord>> {
+async function fetchFgProjections(
+  stats: "pit" | "bat",
+  raterModel: RaterModel | null,
+  /** Season-to-date volume (PA for hitters, IP for pitchers) by MLBAM id — sets
+   * the full-season-pace scale factor k = seasonVol / rosVol for the ESPN rater. */
+  seasonVol: Map<string, number>
+): Promise<Map<string, RawRecord>> {
   const systems: { system: Exclude<ProjSystem, "blend">; type: string }[] =
     stats === "bat"
       ? [
@@ -323,6 +337,8 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
       const h = num(r.H);
       const bb = num(r.BB);
       const sv = num(r.SV);
+      const so = num(r.SO);
+      const w = num(r.W);
       // Raw counting stats fed to the CBS pitcher scoring (BS/NH/PG unprojected).
       const score: ScoreCounts = {
         bb,
@@ -330,7 +346,7 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
         hbp: num(r.HBP),
         ibb: num(r.IBB),
         ip,
-        so: num(r.SO),
+        so,
         qs: num(r.QS),
         sv,
         h,
@@ -340,6 +356,7 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
       return {
         disp: { ip, era: num(r.ERA), whip: num(r.WHIP), sv, ptsCbs },
         score,
+        w,
         ip,
         er,
         hbb: h !== undefined && bb !== undefined ? h + bb : undefined,
@@ -364,8 +381,8 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
         ? b1 + 2 * b2 + 3 * b3 + 4 * hr
         : undefined;
     const score: ScoreCounts = { bb, cs, r: rr, rbi, sb, tb };
-    const ptsCbs =
-      ab !== undefined || pa !== undefined ? roundPts(cbsHitterPoints(score)) : undefined;
+    const hasPt = ab !== undefined || pa !== undefined;
+    const ptsCbs = hasPt ? roundPts(cbsHitterPoints(score)) : undefined;
     return {
       disp: {
         pa,
@@ -440,7 +457,27 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
         position ||= m.position;
       }
     }
-    const blend = blendProjections(present, stats);
+    // ESPN Player Rater per system: PACE (scaled to season-to-date volume, so a
+    // player at his projected rate reads ~his current ESPN PR) + REMAINING (raw
+    // rest-of-season accumulation, k=1).
+    const vol = seasonVol.get(id);
+    if (raterModel) {
+      for (const { comp } of present) {
+        const rosVol = stats === "bat" ? comp.pa : comp.ip;
+        const k = vol && rosVol ? vol / rosVol : 1;
+        const pace =
+          stats === "bat"
+            ? hitterRater(raterModel, { r: comp.disp.r, hr: comp.disp.hr, rbi: comp.disp.rbi, sb: comp.disp.sb, h: comp.h, ab: comp.ab }, k)
+            : pitcherRater(raterModel, { w: comp.w, sv: comp.disp.sv, k: comp.score.so, er: comp.er, h: comp.score.h, bb: comp.score.bb, ip: comp.ip }, k);
+        const rem =
+          stats === "bat"
+            ? hitterRater(raterModel, { r: comp.disp.r, hr: comp.disp.hr, rbi: comp.disp.rbi, sb: comp.disp.sb, h: comp.h, ab: comp.ab }, 1)
+            : pitcherRater(raterModel, { w: comp.w, sv: comp.disp.sv, k: comp.score.so, er: comp.er, h: comp.score.h, bb: comp.score.bb, ip: comp.ip }, 1);
+        if (pace !== undefined) comp.disp.raterEspn = roundPts(pace);
+        if (rem !== undefined) comp.disp.raterEspnRem = roundPts(rem);
+      }
+    }
+    const blend = blendProjections(present, stats, raterModel, vol);
     if (blend) projBySystem.blend = blend;
     out.set(id, { name, team, fgPlayerId, position, stats: { projBySystem } });
   }
@@ -450,7 +487,9 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
 /** Compute the 40/40/20 blend, renormalizing over present systems; recompute rates. */
 function blendProjections(
   present: { system: Exclude<ProjSystem, "blend">; comp: ProjComp }[],
-  stats: "pit" | "bat"
+  stats: "pit" | "bat",
+  raterModel: RaterModel | null,
+  seasonVol: number | undefined
 ): ProjStats | undefined {
   if (present.length === 0) return undefined;
   const W = present.reduce((s, p) => s + BLEND_W[p.system], 0);
@@ -476,12 +515,26 @@ function blendProjections(
       h: wsum((c) => c.score.h) / W,
       hr: wsum((c) => c.score.hr) / W,
     };
+    const pInput = {
+      w: wsum((c) => c.w) / W,
+      sv: pScore.sv,
+      k: pScore.so,
+      er: pScore.er,
+      h: pScore.h,
+      bb: pScore.bb,
+      ip: pScore.ip,
+    };
+    const kBlend = seasonVol && pScore.ip ? seasonVol / pScore.ip : 1;
+    const prPace = raterModel && ipW > 0 ? pitcherRater(raterModel, pInput, kBlend) : undefined;
+    const prRem = raterModel && ipW > 0 ? pitcherRater(raterModel, pInput, 1) : undefined;
     return {
       ip: wsum((c) => c.ip) / W,
       sv: wsum((c) => c.disp.sv) / W,
       era: ipW > 0 ? (9 * wsum((c) => c.er)) / ipW : undefined,
       whip: ipW > 0 ? wsum((c) => c.hbb) / ipW : undefined,
       ptsCbs: ipW > 0 ? roundPts(cbsPitcherPoints(pScore)) : undefined,
+      raterEspn: prPace === undefined ? undefined : roundPts(prPace),
+      raterEspnRem: prRem === undefined ? undefined : roundPts(prRem),
     };
   }
   const abW = wsum((c) => c.ab);
@@ -495,12 +548,28 @@ function blendProjections(
     sb: wsum((c) => c.score.sb) / W,
     tb: wsum((c) => c.score.tb) / W,
   };
+  const rBlend = wsum((c) => c.disp.r) / W;
+  const hrBlendVal = wsum((c) => c.disp.hr) / W;
+  const rbiBlend = wsum((c) => c.disp.rbi) / W;
+  const sbBlend = wsum((c) => c.disp.sb) / W;
+  const paBlend = paW / W;
+  const hInput = {
+    r: rBlend,
+    hr: hrBlendVal,
+    rbi: rbiBlend,
+    sb: sbBlend,
+    h: wsum((c) => c.h) / W,
+    ab: abW / W,
+  };
+  const kBlend = seasonVol && paBlend ? seasonVol / paBlend : 1;
+  const hrPace = raterModel && abW > 0 ? hitterRater(raterModel, hInput, kBlend) : undefined;
+  const hrRem = raterModel && abW > 0 ? hitterRater(raterModel, hInput, 1) : undefined;
   return {
-    pa: paW / W,
-    r: wsum((c) => c.disp.r) / W,
-    hr: wsum((c) => c.disp.hr) / W,
-    rbi: wsum((c) => c.disp.rbi) / W,
-    sb: wsum((c) => c.disp.sb) / W,
+    pa: paBlend,
+    r: rBlend,
+    hr: hrBlendVal,
+    rbi: rbiBlend,
+    sb: sbBlend,
     avg: abW > 0 ? wsum((c) => c.h) / abW : undefined,
     obp: obpDenW > 0 ? wsum((c) => c.obpNum) / obpDenW : undefined,
     slg: abW > 0 ? wsum((c) => c.tb) / abW : undefined,
@@ -511,6 +580,8 @@ function blendProjections(
     // wOBA lacks public constants to recompute — PA-weight the rate.
     woba: paW > 0 ? wsum((c) => mul(c.disp.woba, c.pa)) / paW : undefined,
     ptsCbs: abW > 0 ? roundPts(cbsHitterPoints(hScore)) : undefined,
+    raterEspn: hrPace === undefined ? undefined : roundPts(hrPace),
+    raterEspnRem: hrRem === undefined ? undefined : roundPts(hrRem),
   };
 }
 
@@ -599,19 +670,49 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
       return new Map<string, T>();
     });
 
-  const [expPit, expBat, rvPit, rvBat, pctPit, pctBat, fgLeadPit, fgLeadBat, fgProjPit, fgProjBat] =
-    await Promise.all([
-      safe(fetchSavantExpected("pitcher")),
-      safe(fetchSavantExpected("batter")),
-      safe(fetchSavantRunValue("pitcher")),
-      safe(fetchSavantRunValue("batter")),
-      safe(fetchSavantPercentiles("pitcher")),
-      safe(fetchSavantPercentiles("batter")),
-      safe(fetchFgLeaderboardPit()),
-      safe(fetchFgLeaderboardBat()),
-      safe(fetchFgProjections("pit")),
-      safe(fetchFgProjections("bat")),
-    ]);
+  // Fit the ESPN Player Rater model first (best-effort) so the projection
+  // fetchers can turn each system's RoS projection into a ROS Player Rater.
+  const raterModel = await fetchAndFitEspnRater().catch((e) => {
+    console.warn("[stats] espn rater fit failed:", e instanceof Error ? e.message : e);
+    return null;
+  });
+  if (raterModel) {
+    console.log(
+      `[stats] ESPN rater fit: hitters R²=${raterModel.hitterR2.toFixed(4)} (n=${raterModel.hitterN}), ` +
+        `pitchers R²=${raterModel.pitcherR2.toFixed(4)} (n=${raterModel.pitcherN})`
+    );
+  }
+
+  // Phase 1: everything except the projections. The season leaderboards give the
+  // season-to-date volume (PA/IP) that sets the ESPN-rater "full-season pace" scale.
+  const [expPit, expBat, rvPit, rvBat, pctPit, pctBat, fgLeadPit, fgLeadBat] = await Promise.all([
+    safe(fetchSavantExpected("pitcher")),
+    safe(fetchSavantExpected("batter")),
+    safe(fetchSavantRunValue("pitcher")),
+    safe(fetchSavantRunValue("batter")),
+    safe(fetchSavantPercentiles("pitcher")),
+    safe(fetchSavantPercentiles("batter")),
+    safe(fetchFgLeaderboardPit()),
+    safe(fetchFgLeaderboardBat()),
+  ]);
+
+  // Season-to-date volume by MLBAM id: PA for hitters, IP for pitchers.
+  const volFrom = (m: Map<string, RawRecord>, key: "seasonPa" | "seasonIp") => {
+    const out = new Map<string, number>();
+    for (const [id, rec] of m) {
+      const v = rec.stats[key];
+      if (typeof v === "number" && v > 0) out.set(id, v);
+    }
+    return out;
+  };
+  const volPit = volFrom(fgLeadPit, "seasonIp");
+  const volBat = volFrom(fgLeadBat, "seasonPa");
+
+  // Phase 2: projections (need the volume maps + rater model).
+  const [fgProjPit, fgProjBat] = await Promise.all([
+    safe(fetchFgProjections("pit", raterModel, volPit)),
+    safe(fetchFgProjections("bat", raterModel, volBat)),
+  ]);
 
   const pitchers = buildNameMap([expPit, rvPit, pctPit, fgLeadPit, fgProjPit]);
   const hitters = buildNameMap([expBat, rvBat, pctBat, fgLeadBat, fgProjBat]);

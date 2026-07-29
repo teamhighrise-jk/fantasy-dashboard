@@ -126,6 +126,13 @@ export interface ProjStats {
   // Projected CBS fantasy points (rest-of-season) for this system, computed by
   // running this system's projected counting stats through the CBS league scoring.
   ptsCbs?: number;
+  // Projected ESPN Player Rater for this system — reverse-engineered from ESPN's
+  // live 5x5-roto rater. `raterEspn` = full-season PACE (scaled to season-to-date
+  // volume, so a player at his projected rate reads ~his current ESPN PR);
+  // `raterEspnRem` = value REMAINING (raw rest-of-season accumulation). See
+  // lib/espn/playerRater.ts.
+  raterEspn?: number;
+  raterEspnRem?: number;
 }
 
 /**
@@ -167,6 +174,10 @@ export interface FreeAgentStats {
    * kinds. See lib/cbs/scoring.ts for the weights + coverage caveats.
    */
   projPtsCbs?: number;
+  /** Projected ESPN Player Rater (RoS), selected system — full-season pace (5x5 roto). */
+  projRaterEspn?: number;
+  /** Projected ESPN Player Rater (RoS), selected system — value remaining (raw RoS). */
+  projRaterEspnRem?: number;
   projPa?: number; // hitter (projected plate appearances)
   projIp?: number; // pitcher
   projEra?: number; // pitcher

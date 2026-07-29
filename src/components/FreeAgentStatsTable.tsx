@@ -1,5 +1,5 @@
 import type { FreeAgentPlayer, PlayerKind, ProjSystem } from "@/lib/types";
-import StatsTable, { type StatRow, type StatFilter, sourceLinks } from "./StatsTable";
+import StatsTable, { type StatRow, type StatFilter, type ValueCol, sourceLinks } from "./StatsTable";
 import { resolveProjection } from "@/lib/useProjSystem";
 
 /** Free Agents: rank-ordered stat table; player names link to the add/drop page. */
@@ -12,11 +12,14 @@ export default function FreeAgentStatsTable({
   watchedIds,
   statFilters,
   projSystem,
+  valueCols,
 }: {
   title: string;
   kind: PlayerKind;
   players: FreeAgentPlayer[];
   addDropUrl?: string;
+  /** Which ROS-value column(s) to show — the league's own scoring. */
+  valueCols?: ValueCol[];
   /** Add/remove a player to the watchlist (renders a ★ toggle by the name). */
   onToggleWatch?: (watchId: string) => void;
   /** Watchlist ids currently tracked — drives the ★ state. */
@@ -57,6 +60,7 @@ export default function FreeAgentStatsTable({
       onToggleWatch={onToggleWatch}
       watchedIds={watchedIds}
       statFilters={statFilters}
+      valueCols={valueCols}
     />
   );
 }
