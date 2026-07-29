@@ -54,6 +54,8 @@ export function resolveProjection(
   if (!p) return stats;
   return {
     ...stats,
+    projPtsCbs: p.ptsCbs,
+    projPa: p.pa,
     projR: p.r,
     projHr: p.hr,
     projRbi: p.rbi,

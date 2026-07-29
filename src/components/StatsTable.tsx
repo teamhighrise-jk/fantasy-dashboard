@@ -49,8 +49,26 @@ const pctlCol = (label: string, key: StatKey, what: string): StatCol => ({
   tooltip: () => `${what} — Savant percentile rank (0–100, higher=better)`,
 });
 
+// Projected fantasy points (rest-of-season), run through a league's scoring.
+// CBS today; ESPN slots in beside it (phase B). Follows the projection-system
+// toggle (blend by default), like the other proj* columns.
+const ptsRosGroup: StatGroup = {
+  label: "Pts ROS",
+  cols: [
+    {
+      label: "CBS",
+      key: "projPtsCbs",
+      fmt: dec1,
+      lowerBetter: false,
+      tooltip: () =>
+        "Projected CBS fantasy points (rest-of-season), from the selected projection system. Blown saves / no-hitters / perfect games aren't projected; total-bases-allowed is estimated.",
+    },
+  ],
+};
+
 const GROUPS: Record<PlayerKind, StatGroup[]> = {
   hitter: [
+    ptsRosGroup,
     {
       label: "Season",
       cols: [
@@ -87,6 +105,7 @@ const GROUPS: Record<PlayerKind, StatGroup[]> = {
     {
       label: "Projections (RoS)",
       cols: [
+        { label: "PA", key: "projPa", fmt: int, lowerBetter: false },
         { label: "R", key: "projR", fmt: int, lowerBetter: false },
         { label: "HR", key: "projHr", fmt: int, lowerBetter: false },
         { label: "RBI", key: "projRbi", fmt: int, lowerBetter: false },
@@ -100,6 +119,7 @@ const GROUPS: Record<PlayerKind, StatGroup[]> = {
     },
   ],
   pitcher: [
+    ptsRosGroup,
     {
       label: "Season",
       cols: [
@@ -273,6 +293,10 @@ const LINK_META: { key: keyof SourceLinks; label: string; title: string }[] = [
 
 type SortKey = "lead" | StatKey;
 
+// The "OF" position chip is an umbrella: it selects any outfield eligibility
+// (FantasyPros splits the outfield into LF/CF/RF; some sources use a generic OF).
+const OF_GROUP = ["LF", "CF", "RF", "OF"];
+
 export default function StatsTable({
   title,
   kind,
@@ -325,13 +349,20 @@ export default function StatsTable({
     if (!enablePositionFilter) return [];
     const set = new Set<string>();
     for (const r of rows) for (const p of r.positions ?? []) set.add(p);
+    // Offer an umbrella "OF" chip whenever any outfield eligibility is present.
+    if (OF_GROUP.some((p) => set.has(p))) set.add("OF");
     return sortPositions([...set]);
   }, [rows, enablePositionFilter]);
 
   // Apply the position filter + additive stat filters (rows lacking a value fail).
   const visibleRows = useMemo(() => {
     let rs = rows;
-    if (enablePositionFilter && posFilter) rs = rs.filter((r) => r.positions?.includes(posFilter));
+    if (enablePositionFilter && posFilter) {
+      rs =
+        posFilter === "OF"
+          ? rs.filter((r) => r.positions?.some((p) => OF_GROUP.includes(p)))
+          : rs.filter((r) => r.positions?.includes(posFilter));
+    }
     const active = (statFilters ?? []).filter((f) => colKeys.has(f.key));
     if (active.length) rs = rs.filter((r) => active.every((f) => passesFilter(r.stats?.[f.key], f)));
     return rs;

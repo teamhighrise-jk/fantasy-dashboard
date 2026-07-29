@@ -1,5 +1,6 @@
 import type { FreeAgentStats, PlayerKind, PlayerStatsEntry, ProjStats, ProjSystem } from "@/lib/types";
 import { normalizeName, teamsConflict } from "@/lib/teams";
+import { cbsHitterPoints, cbsPitcherPoints, roundPts, type ScoreCounts } from "@/lib/cbs/scoring";
 
 /**
  * Advanced-stats sourcing for the Free Agents page.
@@ -286,6 +287,8 @@ const BLEND_W: Record<Exclude<ProjSystem, "blend">, number> = { thebat: 0.4, dc:
 // Component totals we need to recompute blended rates.
 interface ProjComp {
   disp: ProjStats; // this system's own displayed stats
+  // Raw counting stats fed to the CBS scoring (blended separately from rates).
+  score: ScoreCounts;
   // hitter components
   pa?: number;
   ab?: number;
@@ -319,13 +322,30 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
       const er = num(r.ER);
       const h = num(r.H);
       const bb = num(r.BB);
+      const sv = num(r.SV);
+      // Raw counting stats fed to the CBS pitcher scoring (BS/NH/PG unprojected).
+      const score: ScoreCounts = {
+        bb,
+        er,
+        hbp: num(r.HBP),
+        ibb: num(r.IBB),
+        ip,
+        so: num(r.SO),
+        qs: num(r.QS),
+        sv,
+        h,
+        hr: num(r.HR),
+      };
+      const ptsCbs = ip !== undefined ? roundPts(cbsPitcherPoints(score)) : undefined;
       return {
-        disp: { ip, era: num(r.ERA), whip: num(r.WHIP), sv: num(r.SV) },
+        disp: { ip, era: num(r.ERA), whip: num(r.WHIP), sv, ptsCbs },
+        score,
         ip,
         er,
         hbb: h !== undefined && bb !== undefined ? h + bb : undefined,
       };
     }
+    const pa = num(r.PA);
     const ab = num(r.AB);
     const h = num(r.H);
     const b2 = num(r["2B"]);
@@ -335,23 +355,33 @@ async function fetchFgProjections(stats: "pit" | "bat"): Promise<Map<string, Raw
     const bb = num(r.BB);
     const hbp = num(r.HBP);
     const sf = num(r.SF);
+    const rr = num(r.R);
+    const rbi = num(r.RBI);
+    const sb = num(r.SB);
+    const cs = num(r.CS);
     const tb =
       b1 !== undefined && b2 !== undefined && b3 !== undefined && hr !== undefined
         ? b1 + 2 * b2 + 3 * b3 + 4 * hr
         : undefined;
+    const score: ScoreCounts = { bb, cs, r: rr, rbi, sb, tb };
+    const ptsCbs =
+      ab !== undefined || pa !== undefined ? roundPts(cbsHitterPoints(score)) : undefined;
     return {
       disp: {
-        r: num(r.R),
+        pa,
+        r: rr,
         hr,
-        rbi: num(r.RBI),
-        sb: num(r.SB),
+        rbi,
+        sb,
         avg: num(r.AVG),
         obp: num(r.OBP),
         slg: num(r.SLG),
         ops: num(r.OPS) ?? add(num(r.OBP), num(r.SLG)),
         woba: num(r.wOBA),
+        ptsCbs,
       },
-      pa: num(r.PA),
+      score,
+      pa,
       ab,
       h,
       tb,
@@ -433,17 +463,40 @@ function blendProjections(
 
   if (stats === "pit") {
     const ipW = wsum((c) => c.ip);
+    // Blended counting stats → CBS points (weighted average over present systems).
+    const pScore: ScoreCounts = {
+      bb: wsum((c) => c.score.bb) / W,
+      er: wsum((c) => c.score.er) / W,
+      hbp: wsum((c) => c.score.hbp) / W,
+      ibb: wsum((c) => c.score.ibb) / W,
+      ip: wsum((c) => c.score.ip) / W,
+      so: wsum((c) => c.score.so) / W,
+      qs: wsum((c) => c.score.qs) / W,
+      sv: wsum((c) => c.score.sv) / W,
+      h: wsum((c) => c.score.h) / W,
+      hr: wsum((c) => c.score.hr) / W,
+    };
     return {
       ip: wsum((c) => c.ip) / W,
       sv: wsum((c) => c.disp.sv) / W,
       era: ipW > 0 ? (9 * wsum((c) => c.er)) / ipW : undefined,
       whip: ipW > 0 ? wsum((c) => c.hbb) / ipW : undefined,
+      ptsCbs: ipW > 0 ? roundPts(cbsPitcherPoints(pScore)) : undefined,
     };
   }
   const abW = wsum((c) => c.ab);
   const paW = wsum((c) => c.pa);
   const obpDenW = wsum((c) => c.obpDen);
+  const hScore: ScoreCounts = {
+    bb: wsum((c) => c.score.bb) / W,
+    cs: wsum((c) => c.score.cs) / W,
+    r: wsum((c) => c.score.r) / W,
+    rbi: wsum((c) => c.score.rbi) / W,
+    sb: wsum((c) => c.score.sb) / W,
+    tb: wsum((c) => c.score.tb) / W,
+  };
   return {
+    pa: paW / W,
     r: wsum((c) => c.disp.r) / W,
     hr: wsum((c) => c.disp.hr) / W,
     rbi: wsum((c) => c.disp.rbi) / W,
@@ -457,6 +510,7 @@ function blendProjections(
         : undefined,
     // wOBA lacks public constants to recompute — PA-weight the rate.
     woba: paW > 0 ? wsum((c) => mul(c.disp.woba, c.pa)) / paW : undefined,
+    ptsCbs: abW > 0 ? roundPts(cbsHitterPoints(hScore)) : undefined,
   };
 }
 

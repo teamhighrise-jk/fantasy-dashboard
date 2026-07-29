@@ -108,6 +108,7 @@ export type ProjSystem = "blend" | "thebat" | "dc" | "oopsy";
 /** One projection system's displayed rest-of-season stats (hitter + pitcher fields). */
 export interface ProjStats {
   // hitter
+  pa?: number;
   r?: number;
   hr?: number;
   rbi?: number;
@@ -122,6 +123,9 @@ export interface ProjStats {
   era?: number;
   whip?: number;
   sv?: number;
+  // Projected CBS fantasy points (rest-of-season) for this system, computed by
+  // running this system's projected counting stats through the CBS league scoring.
+  ptsCbs?: number;
 }
 
 /**
@@ -157,6 +161,13 @@ export interface FreeAgentStats {
   // values (resolved client-side per the projection-system toggle) and are what
   // the shared StatsTable's "Projections (RoS)" group renders.
   projBySystem?: Partial<Record<ProjSystem, ProjStats>>;
+  /**
+   * Projected CBS fantasy points, rest-of-season, for the currently-selected
+   * projection system (resolved client-side, like the other proj* fields). Both
+   * kinds. See lib/cbs/scoring.ts for the weights + coverage caveats.
+   */
+  projPtsCbs?: number;
+  projPa?: number; // hitter (projected plate appearances)
   projIp?: number; // pitcher
   projEra?: number; // pitcher
   projWhip?: number; // pitcher
