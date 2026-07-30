@@ -42,8 +42,11 @@ yarn-error.log*
 /tmp/
 *.har
 
-# local Claude Code settings (personal permissions)
-.claude/settings.local.json
+# local Claude Code settings (personal permissions + local paths)
+.claude/
+
+# personal working notes (local paths / handoff prompts)
+prompt_*.md
 
 # vercel
 .vercel
