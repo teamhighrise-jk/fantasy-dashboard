@@ -317,6 +317,9 @@ export interface StatRow {
   freeAgent?: PlayerAvailability;
   /** Watchlist id (== stats-index id / MLBAM id). Enables the ★ add-to-watchlist toggle. */
   watchId?: string;
+  /** True for the user's own rostered players merged into the FA view — renders a
+   * "MINE" badge + a tinted (frozen) row so they stand out from free agents. */
+  mine?: boolean;
 }
 
 const LINK_META: { key: keyof SourceLinks; label: string; title: string }[] = [
@@ -330,6 +333,17 @@ type SortKey = "lead" | StatKey;
 // The "OF" position chip is an umbrella: it selects any outfield eligibility
 // (FantasyPros splits the outfield into LF/CF/RF; some sources use a generic OF).
 const OF_GROUP = ["LF", "CF", "RF", "OF"];
+
+// Keep the Pos column narrow: show at most the first 2 positions (canonical
+// order); any beyond that collapse into a "+N" hover affordance (full list on
+// hover). Display-only — the position filter still uses the complete list.
+const POS_SHOWN = 2;
+function posDisplay(positions: string[] | undefined, fallback: string) {
+  const list = positions?.length ? sortPositions(positions) : fallback ? [fallback] : [];
+  const full = list.join("/");
+  if (list.length <= POS_SHOWN) return { shown: full, full, extra: 0 };
+  return { shown: list.slice(0, POS_SHOWN).join("/"), full, extra: list.length - POS_SHOWN };
+}
 
 export default function StatsTable({
   title,
@@ -414,10 +428,14 @@ export default function StatsTable({
   }, [leadColSpan, collapsed, rows, showFreeAgentCol]);
 
   const FROZEN_BG = "bg-zinc-950";
-  const freezeStyle = (i: number): CSSProperties => ({
+  // Opaque bg for a frozen cell. `mine` rows get a warm tint so the user's own
+  // players stand out even in the always-visible frozen block. Opaque is required
+  // so scrolling stats don't show through the sticky cells.
+  const freezeStyle = (i: number, mine = false): CSSProperties => ({
     position: "sticky",
     left: leadLeft[i] ?? 0,
     zIndex: 3,
+    ...(mine ? { backgroundColor: "#2b2410" } : {}),
     // Right-edge shadow on the last frozen column so scrolling stats slide under.
     ...(i === leadColSpan - 1 ? { boxShadow: "6px 0 6px -4px rgba(0,0,0,0.7)" } : {}),
   });
@@ -631,7 +649,7 @@ export default function StatsTable({
             {sorted.map((r) => (
               <tr key={r.id} className="border-b border-zinc-800/50 last:border-0">
                 {onRemove ? (
-                  <td className={`px-2 py-1 text-center ${FROZEN_BG}`} style={freezeStyle(idxLead)}>
+                  <td className={`px-2 py-1 text-center ${FROZEN_BG}`} style={freezeStyle(idxLead, r.mine)}>
                     <button
                       onClick={() => onRemove(r.id)}
                       title="Remove from watchlist"
@@ -643,14 +661,14 @@ export default function StatsTable({
                 ) : (
                   <td
                     className={`px-2 py-1 text-right font-mono text-zinc-500 tabular-nums ${FROZEN_BG}`}
-                    style={freezeStyle(idxLead)}
+                    style={freezeStyle(idxLead, r.mine)}
                   >
                     {r.lead}
                   </td>
                 )}
                 <td
                   className={`px-2 py-1 font-medium text-zinc-100 whitespace-nowrap ${FROZEN_BG}`}
-                  style={freezeStyle(idxPlayer)}
+                  style={freezeStyle(idxPlayer, r.mine)}
                 >
                   {r.nameHref ? (
                     <a
@@ -664,6 +682,14 @@ export default function StatsTable({
                     </a>
                   ) : (
                     r.name
+                  )}
+                  {r.mine && (
+                    <span
+                      className="ml-1 rounded bg-amber-500/20 px-1 text-[9px] font-semibold uppercase text-amber-400"
+                      title="On your roster in this league"
+                    >
+                      Mine
+                    </span>
                   )}
                   {r.injury && (
                     <span
@@ -709,7 +735,7 @@ export default function StatsTable({
                   )}
                 </td>
                 {showFreeAgentCol && (
-                  <td className={`px-2 py-1 whitespace-nowrap ${FROZEN_BG}`} style={freezeStyle(idxFa)}>
+                  <td className={`px-2 py-1 whitespace-nowrap ${FROZEN_BG}`} style={freezeStyle(idxFa, r.mine)}>
                     <span className="inline-flex items-center gap-1 align-middle">
                       {r.freeAgent?.espn !== undefined && (
                         <a
@@ -738,13 +764,25 @@ export default function StatsTable({
                 )}
                 <td
                   className={`px-2 py-1 text-zinc-400 whitespace-nowrap ${FROZEN_BG}`}
-                  style={freezeStyle(idxPos)}
+                  style={freezeStyle(idxPos, r.mine)}
                 >
-                  {r.position}
+                  {(() => {
+                    const d = posDisplay(r.positions, r.position);
+                    return (
+                      <span title={d.extra > 0 ? d.full : undefined}>
+                        {d.shown}
+                        {d.extra > 0 && (
+                          <span className="ml-0.5 cursor-help text-zinc-500 underline decoration-dotted">
+                            +{d.extra}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td
                   className={`px-2 py-1 text-zinc-400 whitespace-nowrap ${FROZEN_BG}`}
-                  style={freezeStyle(idxTm)}
+                  style={freezeStyle(idxTm, r.mine)}
                 >
                   {r.proTeam}
                 </td>

@@ -248,6 +248,9 @@ export interface FreeAgentPlayer {
    * name falls back to the league's add/drop page (LeagueFreeAgents.addDropUrl).
    */
   addDropUrl?: string;
+  /** True when this is one of the USER'S rostered players, merged into the FA view
+   * for comparison (the "show my roster" toggle) — not an available free agent. */
+  mine?: boolean;
 }
 
 /** Top available hitters and pitchers within a single league. */
