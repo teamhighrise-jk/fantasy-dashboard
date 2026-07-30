@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { createPortal } from "react-dom";
 import type { FreeAgentStats, PlayerAvailability, PlayerKind } from "@/lib/types";
 import { EspnLogo, CbsLogo } from "@/components/LeagueLogos";
-import PlayerCard from "@/components/PlayerCard";
+import PlayerCard, { playerCardHtml } from "@/components/PlayerCard";
 import { sortPositions } from "@/lib/teams";
 
 type Fmt = (v: number) => string;
@@ -450,6 +450,14 @@ export default function StatsTable({
   const scheduleHide = () => {
     hideTimer.current = window.setTimeout(() => setHovered(null), 140);
   };
+  // Clicking a name opens the player card in its own pop-up window.
+  const openCardWindow = (row: StatRow) => {
+    const w = window.open("", "_blank", "width=460,height=700");
+    if (w) {
+      w.document.write(playerCardHtml(row, kind, groups));
+      w.document.close();
+    }
+  };
   useEffect(
     () => () => {
       window.clearTimeout(showTimer.current);
@@ -704,20 +712,10 @@ export default function StatsTable({
                   <span
                     onMouseEnter={(e) => onNameEnter(r, e.currentTarget)}
                     onMouseLeave={onNameLeave}
+                    onClick={() => openCardWindow(r)}
+                    className="cursor-pointer hover:text-blue-400"
                   >
-                    {r.nameHref ? (
-                      <a
-                        href={r.nameHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-blue-400 hover:underline"
-                        title="Open this league's add/drop page"
-                      >
-                        {r.name}
-                      </a>
-                    ) : (
-                      r.name
-                    )}
+                    {r.name}
                   </span>
                   {r.mine && (
                     <span
