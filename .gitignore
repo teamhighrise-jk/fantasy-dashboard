@@ -54,3 +54,9 @@ prompt_*.md
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# marketing brochure (contains your league data) — keep local
+*-Brochure.pdf
+
+# brochure source (html + screenshots) — keep local
+/brochure/
