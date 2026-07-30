@@ -18,6 +18,7 @@ function headshotUrl(mlbamId?: string): string | undefined {
 
 const fmtRate = (v: number) => v.toFixed(3).replace(/^(-?)0\./, "$1.");
 const fmtDec2 = (v: number) => v.toFixed(2);
+const fmtInt = (v: number) => String(Math.round(v));
 
 interface Metric {
   label: string;
@@ -27,14 +28,19 @@ interface Metric {
   sc?: StatKey;
   /** Bar scale max for this metric. */
   max: number;
+  /** Per-metric formatter override (defaults to the kind's rate/dec formatter). */
+  fmt?: (v: number) => string;
 }
 
-// The three-lens comparison metrics (only rate stats that exist across lenses).
+// The three-lens comparison metrics. Rate stats have a Statcast (expected)
+// counterpart; the counting stats (HR/SB) show Season (to-date) vs RoS (remaining).
 const HITTER_METRICS: Metric[] = [
   { label: "AVG", season: "seasonAvg", proj: "projAvg", sc: "xba", max: 0.4 },
   { label: "OBP", season: "seasonObp", proj: "projObp", max: 0.45 },
   { label: "SLG", season: "seasonSlg", proj: "projSlg", sc: "xslg", max: 0.7 },
   { label: "wOBA", season: "seasonWoba", proj: "projWoba", sc: "xwoba", max: 0.45 },
+  { label: "HR", season: "seasonHr", proj: "projHr", max: 45, fmt: fmtInt },
+  { label: "SB", season: "seasonSb", proj: "projSb", max: 55, fmt: fmtInt },
 ];
 const PITCHER_METRICS: Metric[] = [
   { label: "ERA", season: "seasonEra", proj: "projEra", sc: "xera", max: 6 },
@@ -92,6 +98,7 @@ function ComparisonViz({ stats, kind }: { stats: FreeAgentStats | undefined; kin
               {LENS_FIELD.map((f, i) => {
                 const v = num(stats, m[f]);
                 if (v === undefined) return null;
+                const fmtV = m.fmt ?? fmt;
                 const pct = Math.max(2, Math.min(100, (v / m.max) * 100));
                 return (
                   <div key={f} className="flex items-center gap-1.5">
@@ -103,7 +110,7 @@ function ComparisonViz({ stats, kind }: { stats: FreeAgentStats | undefined; kin
                       />
                     </span>
                     <span className="w-10 shrink-0 text-right text-[10px] tabular-nums text-zinc-200">
-                      {fmt(v)}
+                      {fmtV(v)}
                     </span>
                   </div>
                 );
@@ -156,10 +163,11 @@ function comparisonHtml(stats: FreeAgentStats | undefined, kind: PlayerKind): st
   if (!rows.length) return "";
   const body = rows
     .map((m) => {
+      const fmtV = m.fmt ?? fmt;
       const cells = LENS_FIELD.map((f, i) => {
         const v = num(stats, m[f]);
         return `<td style="padding:2px 8px;text-align:right;color:${LENS[i].color};font-variant-numeric:tabular-nums">${
-          v === undefined ? "–" : esc(fmt(v))
+          v === undefined ? "–" : esc(fmtV(v))
         }</td>`;
       }).join("");
       return `<tr><td style="padding:2px 8px;color:#d4d4d8">${esc(m.label)}</td>${cells}</tr>`;
