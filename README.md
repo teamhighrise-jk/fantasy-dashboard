@@ -25,11 +25,17 @@ A failure in one provider doesn't break the page — its error shows as a banner
 ## Setup
 
 ```bash
-npm install        # already done
-cp .env.local.example .env.local
-# edit .env.local with your league details (see below)
+npm install
 npm run dev        # http://localhost:3000
 ```
+
+On first run the app opens a **guided Setup page** — enter your ESPN and/or CBS
+league details there and click save (it writes them to a local, gitignored
+`.env.local` for you; nothing leaves your machine). You can reopen it anytime via
+the **Setup** link in the nav. FantasyPros is optional (see below).
+
+Prefer to configure by hand? `cp .env.local.example .env.local` and fill it in
+using the credential guide below.
 
 ## Getting your credentials
 
