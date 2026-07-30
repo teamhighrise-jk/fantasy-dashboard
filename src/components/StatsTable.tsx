@@ -849,7 +849,7 @@ export default function StatsTable({
           <div
             onMouseEnter={cancelHide}
             onMouseLeave={scheduleHide}
-            style={{ position: "fixed", zIndex: 50, maxHeight: "90vh", overflowY: "auto", ...cardPlacement(hovered.rect) }}
+            style={{ position: "fixed", zIndex: 50, overflowY: "auto", ...cardPlacement(hovered.rect) }}
           >
             <PlayerCard row={hovered.row} kind={kind} groups={groups} />
           </div>,
@@ -859,14 +859,22 @@ export default function StatsTable({
   );
 }
 
-/** Position the hover card near the name, flipping/clamping to stay on-screen. */
-function cardPlacement(rect: DOMRect): { left: number; top: number } {
-  const W = 340;
-  const H = 460;
+/**
+ * Position the hover card near the name: prefer to the right (flip left if it
+ * won't fit), and anchor vertically so it never runs off the bottom — `maxHeight`
+ * is the real space available below `top`, so the card scrolls within the viewport
+ * instead of being clipped by the screen edge.
+ */
+function cardPlacement(rect: DOMRect): { left: number; top: number; maxHeight: number } {
+  const W = 640;
   const gap = 8;
   let left = rect.right + gap;
-  if (left + W > window.innerWidth) left = Math.max(8, rect.left - W - gap);
+  if (left + W > window.innerWidth) left = rect.left - W - gap;
+  if (left < gap) left = gap;
+  // Keep a usable window; if there's little room below the name, anchor higher.
+  const want = 480;
   let top = rect.top;
-  if (top + H > window.innerHeight) top = Math.max(8, window.innerHeight - H - 8);
-  return { left, top };
+  if (window.innerHeight - top - gap < want) top = Math.max(gap, window.innerHeight - want - gap);
+  const maxHeight = window.innerHeight - top - gap;
+  return { left, top, maxHeight };
 }

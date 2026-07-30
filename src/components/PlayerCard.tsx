@@ -236,19 +236,19 @@ export default function PlayerCard({
     }
   };
   return (
-    <div className="w-[340px] max-w-[92vw] rounded-xl border border-zinc-700 bg-zinc-950 p-3 shadow-2xl shadow-black/60">
+    <div className="w-[640px] max-w-[95vw] rounded-xl border border-zinc-700 bg-zinc-950 p-3 shadow-2xl shadow-black/60">
       <div className="mb-3 flex items-start gap-3">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={photo}
             alt=""
-            width={72}
-            height={72}
-            className="h-[72px] w-[72px] shrink-0 rounded-lg bg-zinc-900 object-cover"
+            width={64}
+            height={64}
+            className="h-16 w-16 shrink-0 rounded-lg bg-zinc-900 object-cover"
           />
         ) : (
-          <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-2xl text-zinc-700">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-2xl text-zinc-700">
             ⚾
           </div>
         )}
@@ -268,8 +268,16 @@ export default function PlayerCard({
           ⧉ Pop out
         </button>
       </div>
-      <ComparisonViz stats={row.stats} kind={kind} />
-      <StatGrid stats={row.stats} groups={groups} />
+      {/* Two columns — comparison viz beside the full stat grid — so the card is
+          wide-and-short rather than tall (avoids running off the bottom). */}
+      <div className="flex gap-3">
+        <div className="w-[248px] shrink-0">
+          <ComparisonViz stats={row.stats} kind={kind} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <StatGrid stats={row.stats} groups={groups} />
+        </div>
+      </div>
     </div>
   );
 }
