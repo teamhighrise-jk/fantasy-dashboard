@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FreeAgentStats, PlayerAvailability, PlayerKind } from "@/lib/types";
 import { EspnLogo, CbsLogo } from "@/components/LeagueLogos";
 import { sortPositions } from "@/lib/teams";
@@ -379,6 +379,48 @@ export default function StatsTable({
   );
   // Leading (non-stat) columns: lead, Player, [FA], Pos, Tm.
   const leadColSpan = 4 + (showFreeAgentCol ? 1 : 0);
+  // Column indices within the leading block (for the frozen/sticky columns).
+  const idxLead = 0;
+  const idxPlayer = 1;
+  const idxFa = showFreeAgentCol ? 2 : -1;
+  const idxPos = showFreeAgentCol ? 3 : 2;
+  const idxTm = showFreeAgentCol ? 4 : 3;
+
+  // "Freeze panes": the leading block (#/Player/[FA]/Pos/Tm) is sticky-left so it
+  // stays in view when the wide stat columns scroll horizontally. Column widths
+  // are content-driven, so we measure them and set each column's cumulative left
+  // offset. Re-measures on resize + when the data/columns change.
+  const headRowRef = useRef<HTMLTableRowElement>(null);
+  const [leadLeft, setLeadLeft] = useState<number[]>([]);
+  useLayoutEffect(() => {
+    const row = headRowRef.current;
+    if (!row) return;
+    const measure = () => {
+      const cells = Array.from(row.children).slice(0, leadColSpan) as HTMLElement[];
+      const offs: number[] = [];
+      let acc = 0;
+      for (const c of cells) {
+        offs.push(acc);
+        acc += c.offsetWidth;
+      }
+      setLeadLeft((prev) =>
+        prev.length === offs.length && prev.every((v, i) => v === offs[i]) ? prev : offs
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [leadColSpan, collapsed, rows, showFreeAgentCol]);
+
+  const FROZEN_BG = "bg-zinc-950";
+  const freezeStyle = (i: number): CSSProperties => ({
+    position: "sticky",
+    left: leadLeft[i] ?? 0,
+    zIndex: 3,
+    // Right-edge shadow on the last frozen column so scrolling stats slide under.
+    ...(i === leadColSpan - 1 ? { boxShadow: "6px 0 6px -4px rgba(0,0,0,0.7)" } : {}),
+  });
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "lead",
     dir: "asc",
@@ -526,7 +568,11 @@ export default function StatsTable({
         <table className="w-full border-collapse text-xs">
           <thead className="select-none text-zinc-500">
             <tr className="border-b border-zinc-800">
-              <th className="px-2 py-1 text-left" colSpan={leadColSpan} />
+              <th
+                className={`px-2 py-1 text-left ${FROZEN_BG}`}
+                colSpan={leadColSpan}
+                style={{ position: "sticky", left: 0, zIndex: 3, boxShadow: "6px 0 6px -4px rgba(0,0,0,0.7)" }}
+              />
               {groups.map((g, gi) => (
                 <th
                   key={g.label}
@@ -537,22 +583,33 @@ export default function StatsTable({
                 </th>
               ))}
             </tr>
-            <tr className="border-b border-zinc-800 text-zinc-500">
+            <tr ref={headRowRef} className="border-b border-zinc-800 text-zinc-500">
               {onRemove ? (
-                <th className="px-2 py-1" />
+                <th className={`px-2 py-1 ${FROZEN_BG}`} style={freezeStyle(idxLead)} />
               ) : (
                 <th
-                  className="cursor-pointer px-2 py-1 text-right font-medium hover:text-zinc-300"
+                  className={`cursor-pointer px-2 py-1 text-right font-medium hover:text-zinc-300 ${FROZEN_BG}`}
+                  style={freezeStyle(idxLead)}
                   onClick={() => onSort("lead", false)}
                 >
                   {leadingLabel}
                   {caret("lead")}
                 </th>
               )}
-              <th className="px-2 py-1 text-left font-medium">Player</th>
-              {showFreeAgentCol && <th className="px-2 py-1 text-center font-medium">FA</th>}
-              <th className="px-2 py-1 text-left font-medium">Pos</th>
-              <th className="px-2 py-1 text-left font-medium">Tm</th>
+              <th className={`px-2 py-1 text-left font-medium ${FROZEN_BG}`} style={freezeStyle(idxPlayer)}>
+                Player
+              </th>
+              {showFreeAgentCol && (
+                <th className={`px-2 py-1 text-center font-medium ${FROZEN_BG}`} style={freezeStyle(idxFa)}>
+                  FA
+                </th>
+              )}
+              <th className={`px-2 py-1 text-left font-medium ${FROZEN_BG}`} style={freezeStyle(idxPos)}>
+                Pos
+              </th>
+              <th className={`px-2 py-1 text-left font-medium ${FROZEN_BG}`} style={freezeStyle(idxTm)}>
+                Tm
+              </th>
               {groups.map((g, gi) =>
                 g.cols.map((c, ci) => (
                   <th
@@ -574,7 +631,7 @@ export default function StatsTable({
             {sorted.map((r) => (
               <tr key={r.id} className="border-b border-zinc-800/50 last:border-0">
                 {onRemove ? (
-                  <td className="px-2 py-1 text-center">
+                  <td className={`px-2 py-1 text-center ${FROZEN_BG}`} style={freezeStyle(idxLead)}>
                     <button
                       onClick={() => onRemove(r.id)}
                       title="Remove from watchlist"
@@ -584,9 +641,17 @@ export default function StatsTable({
                     </button>
                   </td>
                 ) : (
-                  <td className="px-2 py-1 text-right font-mono text-zinc-500 tabular-nums">{r.lead}</td>
+                  <td
+                    className={`px-2 py-1 text-right font-mono text-zinc-500 tabular-nums ${FROZEN_BG}`}
+                    style={freezeStyle(idxLead)}
+                  >
+                    {r.lead}
+                  </td>
                 )}
-                <td className="px-2 py-1 font-medium text-zinc-100 whitespace-nowrap">
+                <td
+                  className={`px-2 py-1 font-medium text-zinc-100 whitespace-nowrap ${FROZEN_BG}`}
+                  style={freezeStyle(idxPlayer)}
+                >
                   {r.nameHref ? (
                     <a
                       href={r.nameHref}
@@ -644,7 +709,7 @@ export default function StatsTable({
                   )}
                 </td>
                 {showFreeAgentCol && (
-                  <td className="px-2 py-1 whitespace-nowrap">
+                  <td className={`px-2 py-1 whitespace-nowrap ${FROZEN_BG}`} style={freezeStyle(idxFa)}>
                     <span className="inline-flex items-center gap-1 align-middle">
                       {r.freeAgent?.espn !== undefined && (
                         <a
@@ -671,8 +736,18 @@ export default function StatsTable({
                     </span>
                   </td>
                 )}
-                <td className="px-2 py-1 text-zinc-400 whitespace-nowrap">{r.position}</td>
-                <td className="px-2 py-1 text-zinc-400 whitespace-nowrap">{r.proTeam}</td>
+                <td
+                  className={`px-2 py-1 text-zinc-400 whitespace-nowrap ${FROZEN_BG}`}
+                  style={freezeStyle(idxPos)}
+                >
+                  {r.position}
+                </td>
+                <td
+                  className={`px-2 py-1 text-zinc-400 whitespace-nowrap ${FROZEN_BG}`}
+                  style={freezeStyle(idxTm)}
+                >
+                  {r.proTeam}
+                </td>
                 {groups.map((g, gi) =>
                   g.cols.map((c, ci) => {
                     const bg = heatBg(c, r.stats?.[c.key]);
