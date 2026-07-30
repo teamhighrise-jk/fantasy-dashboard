@@ -27,6 +27,7 @@ function toRows(players: NormalizedPlayer[], projSystem: ProjSystem): StatRow[] 
     positions,
     proTeam: p.proTeam,
     stats: resolveProjection(p.stats, projSystem),
+    mlbamId: p.mlbamId,
     injury: p.injuryStatus
       ? `${p.injuryStatus}${p.expectedReturn ? ` · ${p.expectedReturn}` : ""}`
       : undefined,

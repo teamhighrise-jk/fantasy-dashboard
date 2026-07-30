@@ -53,6 +53,7 @@ export default function FreeAgentStatsTable({
       // Only matched players (with an MLBAM id) can be watchlisted — that id is the
       // same key the Watchlist tab uses. Unmatched players get no ★.
       watchId: p.mlbamId,
+      mlbamId: p.mlbamId,
       mine: p.mine,
     };
   });

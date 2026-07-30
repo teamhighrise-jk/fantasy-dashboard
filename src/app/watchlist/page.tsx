@@ -94,6 +94,7 @@ export default function WatchlistPage() {
       positions: positionsById[p.id]?.length ? positionsById[p.id] : p.position ? [p.position] : [],
       proTeam: p.team,
       stats: resolveProjection(p.stats, projSystem),
+      mlbamId: p.mlbamId,
       injury: injuryById[p.id],
       links: sourceLinks({
         mlbamId: p.mlbamId,

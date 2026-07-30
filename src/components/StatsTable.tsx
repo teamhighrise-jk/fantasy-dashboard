@@ -1,8 +1,10 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import type { FreeAgentStats, PlayerAvailability, PlayerKind } from "@/lib/types";
 import { EspnLogo, CbsLogo } from "@/components/LeagueLogos";
+import PlayerCard from "@/components/PlayerCard";
 import { sortPositions } from "@/lib/teams";
 
 type Fmt = (v: number) => string;
@@ -17,7 +19,7 @@ const pct1: Fmt = (v) => `${(v * 100).toFixed(1)}%`;
 /** FreeAgentStats keys that hold a numeric stat (excludes the nested projBySystem bag). */
 export type StatKey = Exclude<keyof FreeAgentStats, "projBySystem">;
 
-interface StatCol {
+export interface StatCol {
   label: string;
   key: StatKey;
   fmt: Fmt;
@@ -25,7 +27,7 @@ interface StatCol {
   lowerBetter: boolean;
   tooltip?: (stats: FreeAgentStats) => string | undefined;
 }
-interface StatGroup {
+export interface StatGroup {
   label: string;
   cols: StatCol[];
 }
@@ -198,7 +200,7 @@ const GROUPS: Record<PlayerKind, StatGroup[]> = {
   ],
 };
 
-function cell(stats: FreeAgentStats | undefined, col: StatCol): string {
+export function cell(stats: FreeAgentStats | undefined, col: StatCol): string {
   const v = stats?.[col.key];
   return typeof v === "number" && Number.isFinite(v) ? col.fmt(v) : "–";
 }
@@ -317,6 +319,8 @@ export interface StatRow {
   freeAgent?: PlayerAvailability;
   /** Watchlist id (== stats-index id / MLBAM id). Enables the ★ add-to-watchlist toggle. */
   watchId?: string;
+  /** MLBAM id (for the player-card headshot photo), when the player matched the stats index. */
+  mlbamId?: string;
   /** True for the user's own rostered players merged into the FA view — renders a
    * "MINE" badge + a tinted (frozen) row so they stand out from free agents. */
   mine?: boolean;
@@ -426,6 +430,33 @@ export default function StatsTable({
     ro.observe(row);
     return () => ro.disconnect();
   }, [leadColSpan, collapsed, rows, showFreeAgentCol]);
+
+  // Player-card popover on name hover. One shared popover per table (not per row).
+  // Rendered to document.body (portal) so the overflow-x container never clips it.
+  const [hovered, setHovered] = useState<{ row: StatRow; rect: DOMRect } | null>(null);
+  const showTimer = useRef<number | undefined>(undefined);
+  const hideTimer = useRef<number | undefined>(undefined);
+  const onNameEnter = (row: StatRow, el: HTMLElement) => {
+    window.clearTimeout(hideTimer.current);
+    window.clearTimeout(showTimer.current);
+    const rect = el.getBoundingClientRect();
+    showTimer.current = window.setTimeout(() => setHovered({ row, rect }), 140);
+  };
+  const onNameLeave = () => {
+    window.clearTimeout(showTimer.current);
+    hideTimer.current = window.setTimeout(() => setHovered(null), 140);
+  };
+  const cancelHide = () => window.clearTimeout(hideTimer.current);
+  const scheduleHide = () => {
+    hideTimer.current = window.setTimeout(() => setHovered(null), 140);
+  };
+  useEffect(
+    () => () => {
+      window.clearTimeout(showTimer.current);
+      window.clearTimeout(hideTimer.current);
+    },
+    []
+  );
 
   const FROZEN_BG = "bg-zinc-950";
   // Opaque bg for a frozen cell. `mine` rows get a warm tint so the user's own
@@ -670,19 +701,24 @@ export default function StatsTable({
                   className={`px-2 py-1 font-medium text-zinc-100 whitespace-nowrap ${FROZEN_BG}`}
                   style={freezeStyle(idxPlayer, r.mine)}
                 >
-                  {r.nameHref ? (
-                    <a
-                      href={r.nameHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-blue-400 hover:underline"
-                      title="Open this league's add/drop page"
-                    >
-                      {r.name}
-                    </a>
-                  ) : (
-                    r.name
-                  )}
+                  <span
+                    onMouseEnter={(e) => onNameEnter(r, e.currentTarget)}
+                    onMouseLeave={onNameLeave}
+                  >
+                    {r.nameHref ? (
+                      <a
+                        href={r.nameHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-blue-400 hover:underline"
+                        title="Open this league's add/drop page"
+                      >
+                        {r.name}
+                      </a>
+                    ) : (
+                      r.name
+                    )}
+                  </span>
                   {r.mine && (
                     <span
                       className="ml-1 rounded bg-amber-500/20 px-1 text-[9px] font-semibold uppercase text-amber-400"
@@ -807,6 +843,30 @@ export default function StatsTable({
         </table>
       </div>
       )}
+      {hovered &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            onMouseEnter={cancelHide}
+            onMouseLeave={scheduleHide}
+            style={{ position: "fixed", zIndex: 50, maxHeight: "90vh", overflowY: "auto", ...cardPlacement(hovered.rect) }}
+          >
+            <PlayerCard row={hovered.row} kind={kind} groups={groups} />
+          </div>,
+          document.body
+        )}
     </div>
   );
+}
+
+/** Position the hover card near the name, flipping/clamping to stay on-screen. */
+function cardPlacement(rect: DOMRect): { left: number; top: number } {
+  const W = 340;
+  const H = 460;
+  const gap = 8;
+  let left = rect.right + gap;
+  if (left + W > window.innerWidth) left = Math.max(8, rect.left - W - gap);
+  let top = rect.top;
+  if (top + H > window.innerHeight) top = Math.max(8, window.innerHeight - H - 8);
+  return { left, top };
 }
