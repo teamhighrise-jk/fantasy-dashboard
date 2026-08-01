@@ -12,7 +12,7 @@ import type {
 } from "@/lib/types";
 import FreeAgentStatsTable from "@/components/FreeAgentStatsTable";
 import FreeAgentFilters, { type FilterRow } from "@/components/FreeAgentFilters";
-import { STAT_CATALOG, parseStatExpr, type StatFilter } from "@/components/StatsTable";
+import { STAT_CATALOG, parseStatExpr, fantasyProsUrlFromName, type StatFilter } from "@/components/StatsTable";
 import ProjSystemSelect from "@/components/ProjSystemSelect";
 import { useWatchlist } from "@/lib/useWatchlist";
 import { useProjSystem } from "@/lib/useProjSystem";
@@ -48,6 +48,9 @@ function rosterToFreeAgents(roster: NormalizedPlayer[]): {
       stats: p.stats,
       mlbamId: p.mlbamId,
       fgPlayerId: p.fgPlayerId,
+      // Roster players have no parsed FantasyPros href — derive it from the name
+      // (same as the Teams tab) so the FP source-link renders.
+      fantasyProsUrl: fantasyProsUrlFromName(p.name),
       mine: true,
     };
     (kind === "pitcher" ? pitchers : hitters).push(fa);

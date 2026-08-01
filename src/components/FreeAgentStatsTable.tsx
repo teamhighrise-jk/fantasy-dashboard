@@ -54,7 +54,8 @@ export default function FreeAgentStatsTable({
       // same key the Watchlist tab uses. Unmatched players get no ★.
       watchId: p.mlbamId,
       mlbamId: p.mlbamId,
-      mine: p.mine,
+      // Tag mine rows with their league so StatsTable shows that league's logo.
+      mine: p.mine ? valueCols?.[0] : undefined,
     };
   });
   return (

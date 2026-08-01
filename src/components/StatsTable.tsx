@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import type { FreeAgentStats, PlayerAvailability, PlayerKind } from "@/lib/types";
+import type { FreeAgentStats, PlayerAvailability, PlayerKind, ProviderId } from "@/lib/types";
 import { EspnLogo, CbsLogo } from "@/components/LeagueLogos";
 import PlayerCard, { playerCardHtml } from "@/components/PlayerCard";
 import { sortPositions } from "@/lib/teams";
@@ -321,9 +321,9 @@ export interface StatRow {
   watchId?: string;
   /** MLBAM id (for the player-card headshot photo), when the player matched the stats index. */
   mlbamId?: string;
-  /** True for the user's own rostered players merged into the FA view — renders a
-   * "MINE" badge + a tinted (frozen) row so they stand out from free agents. */
-  mine?: boolean;
+  /** Set (to the league) for the user's own rostered players merged into the FA
+   * view — renders that league's logo by the name + a tinted (frozen) row. */
+  mine?: ProviderId;
 }
 
 const LINK_META: { key: keyof SourceLinks; label: string; title: string }[] = [
@@ -470,7 +470,7 @@ export default function StatsTable({
   // Opaque bg for a frozen cell. `mine` rows get a warm tint so the user's own
   // players stand out even in the always-visible frozen block. Opaque is required
   // so scrolling stats don't show through the sticky cells.
-  const freezeStyle = (i: number, mine = false): CSSProperties => ({
+  const freezeStyle = (i: number, mine: boolean | ProviderId = false): CSSProperties => ({
     position: "sticky",
     left: leadLeft[i] ?? 0,
     zIndex: 3,
@@ -719,10 +719,10 @@ export default function StatsTable({
                   </span>
                   {r.mine && (
                     <span
-                      className="ml-1 rounded bg-amber-500/20 px-1 text-[9px] font-semibold uppercase text-amber-400"
-                      title="On your roster in this league"
+                      className="ml-1 inline-flex align-middle opacity-90"
+                      title={`On your ${r.mine === "espn" ? "ESPN" : "CBS"} roster`}
                     >
-                      Mine
+                      {r.mine === "espn" ? <EspnLogo /> : <CbsLogo />}
                     </span>
                   )}
                   {r.injury && (
