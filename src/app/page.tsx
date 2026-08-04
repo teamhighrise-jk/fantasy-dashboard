@@ -5,6 +5,7 @@ import type { TeamsResponse } from "@/lib/types";
 import TeamCard from "@/components/TeamCard";
 import StandingsPanel from "@/components/StandingsPanel";
 import ProjSystemSelect from "@/components/ProjSystemSelect";
+import FgBanner from "@/components/FgBanner";
 import { useProjSystem } from "@/lib/useProjSystem";
 
 export default function Dashboard() {
@@ -127,6 +128,8 @@ export default function Dashboard() {
           Could not load: {fetchError}
         </div>
       )}
+
+      <FgBanner fg={data?.fg} />
 
       {providerErrors.map(([provider, message]) => (
         <div

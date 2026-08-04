@@ -170,6 +170,7 @@ export async function getFreeAgents(opts: { force?: boolean } = {}): Promise<Fre
     leagues: base.leagues,
     errors: base.errors,
     fetchedAt: new Date().toISOString(),
+    fg: statsIndex?.fg,
   };
   cache = { at: Date.now(), value };
   return value;

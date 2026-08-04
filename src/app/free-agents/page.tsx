@@ -14,6 +14,7 @@ import FreeAgentStatsTable from "@/components/FreeAgentStatsTable";
 import FreeAgentFilters, { type FilterRow } from "@/components/FreeAgentFilters";
 import { STAT_CATALOG, parseStatExpr, fantasyProsUrlFromName, type StatFilter } from "@/components/StatsTable";
 import ProjSystemSelect from "@/components/ProjSystemSelect";
+import FgBanner from "@/components/FgBanner";
 import { useWatchlist } from "@/lib/useWatchlist";
 import { useProjSystem } from "@/lib/useProjSystem";
 import { cleanPositions } from "@/lib/teams";
@@ -225,6 +226,9 @@ export default function FreeAgentsPage() {
           Could not load: {fetchError}
         </div>
       )}
+
+      <FgBanner fg={data?.fg} />
+
 
       {providerErrors.map(([provider, message]) => (
         <div

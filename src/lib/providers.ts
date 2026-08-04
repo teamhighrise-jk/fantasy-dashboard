@@ -163,7 +163,11 @@ async function assembleTeams(): Promise<TeamsResponse> {
   });
 
   await Promise.all([applyInjuryReturnDates(teams), applyPlayerStats(teams)]);
-  return { teams, errors, fetchedAt: new Date().toISOString() };
+  // FanGraphs health (cached — applyPlayerStats just built the index) for the UI banner.
+  const fg = await getStatsIndex()
+    .then((i) => i.fg)
+    .catch(() => undefined);
+  return { teams, errors, fetchedAt: new Date().toISOString(), fg };
 }
 
 // In-process TTL cache of the assembled teams response — same pattern as

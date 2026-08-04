@@ -15,9 +15,11 @@ import StatsTable, {
 import { useWatchlist } from "@/lib/useWatchlist";
 import { useProjSystem, resolveProjection } from "@/lib/useProjSystem";
 import ProjSystemSelect from "@/components/ProjSystemSelect";
+import FgBanner from "@/components/FgBanner";
 
 export default function WatchlistPage() {
   const [players, setPlayers] = useState<PlayerStatsEntry[]>([]);
+  const [fg, setFg] = useState<PlayersResponse["fg"]>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -33,7 +35,9 @@ export default function WatchlistPage() {
       try {
         const res = await fetch("/api/players", { cache: "no-store" });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-        setPlayers(((await res.json()) as PlayersResponse).players);
+        const body = (await res.json()) as PlayersResponse;
+        setPlayers(body.players);
+        setFg(body.fg);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -118,6 +122,8 @@ export default function WatchlistPage() {
         </div>
         <ProjSystemSelect value={projSystem} onChange={setProjSystem} />
       </header>
+
+      <FgBanner fg={fg} />
 
       {/* Search + typeahead */}
       <div className="relative mb-6 max-w-md">

@@ -1,4 +1,11 @@
-import type { FreeAgentStats, PlayerKind, PlayerStatsEntry, ProjStats, ProjSystem } from "@/lib/types";
+import type {
+  FgStatus,
+  FreeAgentStats,
+  PlayerKind,
+  PlayerStatsEntry,
+  ProjStats,
+  ProjSystem,
+} from "@/lib/types";
 import { normalizeName, teamsConflict } from "@/lib/teams";
 import { cbsHitterPoints, cbsPitcherPoints, roundPts, type ScoreCounts } from "@/lib/cbs/scoring";
 import {
@@ -7,6 +14,7 @@ import {
   pitcherRater,
   type RaterModel,
 } from "@/lib/espn/playerRater";
+import { loadLastGood, saveLastGood } from "@/lib/fgCache";
 
 /**
  * Advanced-stats sourcing for the Free Agents page.
@@ -614,6 +622,8 @@ export interface StatsIndex {
   lookup(name: string, kind: PlayerKind, team?: string): StatsMatch | undefined;
   /** Every player in the index (hitters + pitchers) — for search/watchlist. */
   all: PlayerStatsEntry[];
+  /** FanGraphs data health (fresh / stale-cached / down) — surfaced to the UI. */
+  fg: FgStatus;
 }
 
 /** Merge several MLBAM-keyed maps into one name-keyed record (stats + ids). */
@@ -700,6 +710,28 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
     safe(fetchFgLeaderboardBat()),
   ]);
 
+  // FanGraphs resilience: when a FG fetch is empty (e.g. Cloudflare-blocked us),
+  // fall back to the last-good persisted copy so FG-derived stats degrade to
+  // "last-known" instead of blank. A map below this many rows counts as failed.
+  const MIN_FG = 50;
+  const resolveFg = async (
+    key: string,
+    fresh: Map<string, RawRecord>
+  ): Promise<{ map: Map<string, RawRecord>; ok: boolean; stale: boolean; savedAt?: string }> => {
+    if (fresh.size >= MIN_FG) return { map: fresh, ok: true, stale: false };
+    const last = await loadLastGood<RawRecord>(key);
+    if (last && last.map.size >= MIN_FG) {
+      console.warn(
+        `[stats] FanGraphs "${key}" unavailable (${fresh.size} rows) — serving last-good from ${last.savedAt} (${last.map.size} rows)`
+      );
+      return { map: last.map, ok: true, stale: true, savedAt: last.savedAt };
+    }
+    return { map: fresh, ok: false, stale: false };
+  };
+
+  const leadPitR = await resolveFg("leadPit", fgLeadPit);
+  const leadBatR = await resolveFg("leadBat", fgLeadBat);
+
   // Season-to-date volume by MLBAM id: PA for hitters, IP for pitchers.
   const volFrom = (m: Map<string, RawRecord>, key: "seasonPa" | "seasonIp") => {
     const out = new Map<string, number>();
@@ -709,17 +741,39 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
     }
     return out;
   };
-  const volPit = volFrom(fgLeadPit, "seasonIp");
-  const volBat = volFrom(fgLeadBat, "seasonPa");
+  const volPit = volFrom(leadPitR.map, "seasonIp");
+  const volBat = volFrom(leadBatR.map, "seasonPa");
 
   // Phase 2: projections (need the volume maps + rater model).
   const [fgProjPit, fgProjBat] = await Promise.all([
     safe(fetchFgProjections("pit", raterModel, volPit)),
     safe(fetchFgProjections("bat", raterModel, volBat)),
   ]);
+  const projPitR = await resolveFg("projPit", fgProjPit);
+  const projBatR = await resolveFg("projBat", fgProjBat);
 
-  const pitchers = buildNameMap([expPit, rvPit, pctPit, fgLeadPit, fgProjPit]);
-  const hitters = buildNameMap([expBat, rvBat, pctBat, fgLeadBat, fgProjBat]);
+  // Persist any FRESH healthy FG maps as the new last-good (best-effort).
+  await saveLastGood({
+    ...(fgLeadPit.size >= MIN_FG ? { leadPit: fgLeadPit } : {}),
+    ...(fgLeadBat.size >= MIN_FG ? { leadBat: fgLeadBat } : {}),
+    ...(fgProjPit.size >= MIN_FG ? { projPit: fgProjPit } : {}),
+    ...(fgProjBat.size >= MIN_FG ? { projBat: fgProjBat } : {}),
+  });
+
+  const pitchers = buildNameMap([expPit, rvPit, pctPit, leadPitR.map, projPitR.map]);
+  const hitters = buildNameMap([expBat, rvBat, pctBat, leadBatR.map, projBatR.map]);
+  // FG health: down if any map is missing entirely; else stale if any came from
+  // last-good; else ok. `savedAt` = earliest last-good timestamp in use.
+  const fgResults = [leadPitR, leadBatR, projPitR, projBatR];
+  const savedAt = fgResults
+    .map((r) => r.savedAt)
+    .filter((s): s is string => !!s)
+    .sort()[0];
+  const fg: FgStatus = !fgResults.every((r) => r.ok)
+    ? { state: "down" }
+    : fgResults.some((r) => r.stale)
+      ? { state: "stale", savedAt }
+      : { state: "ok" };
 
   // Attach ESPN's actual season-to-date Player Rater by normalized name (team-
   // guarded against same-name collisions). Applies to both kinds (two-way players
@@ -739,19 +793,26 @@ export async function fetchFreeAgentStats(): Promise<StatsIndex> {
       return { stats: rec.stats, mlbamId: rec.mlbamId, fgPlayerId: rec.fgPlayerId };
     },
     all: [...entriesFrom(hitters, "hitter"), ...entriesFrom(pitchers, "pitcher")],
+    fg,
   };
 }
 
 // Shared TTL cache so the Free Agents and Teams pages don't each refetch the ~7
 // stat-source calls. fetchFreeAgentStats is best-effort (never rejects).
 const INDEX_TTL_MS = 20 * 60 * 1000;
-let indexCache: { at: number; value: StatsIndex } | null = null;
+// When FanGraphs is fully unavailable (and no last-good exists), cache only
+// briefly so we retry soon instead of pinning an FG-less build for 20 minutes.
+const INDEX_TTL_DEGRADED_MS = 2 * 60 * 1000;
+let indexCache: { at: number; ttl: number; value: StatsIndex } | null = null;
 
 export async function getStatsIndex(): Promise<StatsIndex> {
-  if (indexCache && Date.now() - indexCache.at < INDEX_TTL_MS) return indexCache.value;
+  if (indexCache && Date.now() - indexCache.at < indexCache.ttl) return indexCache.value;
   const value = await fetchFreeAgentStats();
-  // Only cache a healthy build — if sources mostly failed, don't pin the gaps
-  // for the full TTL; let the next request retry.
-  if (value.all.length > 100) indexCache = { at: Date.now(), value };
+  // Only cache a healthy build — if sources mostly failed, don't pin the gaps.
+  if (value.all.length > 100) {
+    // Full TTL only when FG is fresh; when stale/down, retry soon to recover.
+    const ttl = value.fg.state === "ok" ? INDEX_TTL_MS : INDEX_TTL_DEGRADED_MS;
+    indexCache = { at: Date.now(), ttl, value };
+  }
   return value;
 }

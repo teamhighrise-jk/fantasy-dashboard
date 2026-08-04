@@ -60,3 +60,6 @@ next-env.d.ts
 
 # brochure source (html + screenshots) — keep local
 /brochure/
+
+# last-good FanGraphs data cache (local, gitignored)
+.fg-cache.local.json

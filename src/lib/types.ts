@@ -283,6 +283,7 @@ export interface PlayerStatsEntry {
 export interface PlayersResponse {
   players: PlayerStatsEntry[];
   fetchedAt: string;
+  fg?: FgStatus;
 }
 
 /**
@@ -313,11 +314,23 @@ export interface AvailabilityResponse {
   fetchedAt: string;
 }
 
+/**
+ * FanGraphs data health, surfaced so the UI can warn when FG-derived stats
+ * (season, projections, FIP group, and downstream Pace/Rem + CBS pts) are stale
+ * or missing. "ok" = fresh; "stale" = serving last-good after a FG outage
+ * (`savedAt` = when it was saved); "down" = FG unavailable and no last-good.
+ */
+export interface FgStatus {
+  state: "ok" | "stale" | "down";
+  savedAt?: string;
+}
+
 /** Shape returned by the /api/free-agents route. */
 export interface FreeAgentsResponse {
   leagues: LeagueFreeAgents[];
   errors: Partial<Record<ProviderId, string>>;
   fetchedAt: string;
+  fg?: FgStatus;
 }
 
 /** What every provider adapter must implement. */
@@ -334,4 +347,5 @@ export interface TeamsResponse {
   /** Per-provider error messages, keyed by provider id. Empty if all succeeded. */
   errors: Partial<Record<ProviderId, string>>;
   fetchedAt: string;
+  fg?: FgStatus;
 }

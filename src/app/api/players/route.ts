@@ -13,14 +13,17 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   let players: PlayersResponse["players"] = [];
+  let fg: PlayersResponse["fg"];
   try {
     const index = await getStatsIndex();
     players = index.all;
+    fg = index.fg;
   } catch {
     players = [];
   }
   return NextResponse.json<PlayersResponse>({
     players,
     fetchedAt: new Date().toISOString(),
+    fg,
   });
 }
