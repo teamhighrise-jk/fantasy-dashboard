@@ -6,7 +6,7 @@ import type {
   ProjStats,
   ProjSystem,
 } from "@/lib/types";
-import { normalizeName, teamsConflict } from "@/lib/teams";
+import { normalizeName, teamsConflict, isUnknownTeam } from "@/lib/teams";
 import { cbsHitterPoints, cbsPitcherPoints, roundPts, type ScoreCounts } from "@/lib/cbs/scoring";
 import {
   fetchAndFitEspnRater,
@@ -660,7 +660,8 @@ function entriesFrom(map: Map<string, NameRecord>, kind: PlayerKind): PlayerStat
       id: r.mlbamId || `${kind[0]}:${key}`,
       name: r.name,
       kind,
-      team: r.team ?? "",
+      // Drop FanGraphs' "- - -" multi-team marker so traded players don't display it.
+      team: isUnknownTeam(r.team) ? "" : r.team!,
       position: r.position ?? "",
       stats: r.stats,
       mlbamId: r.mlbamId,

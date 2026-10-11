@@ -63,15 +63,30 @@ export function canonicalTeam(abbr: string): string {
 }
 
 /**
+ * A team token that does NOT identify a single MLB club, so it must never be
+ * treated as a conflict:
+ *  - blank/undefined — unknown.
+ *  - "FA"/"FA " — FantasyPros real-life free agent (no MLB team).
+ *  - "- - -" / "---" / "—" — FanGraphs' marker for a player who's been on
+ *    multiple teams this season (i.e. traded); their season totals are combined.
+ *  - "2 Tms" / "3 Teams" — other multi-team notations.
+ */
+export function isUnknownTeam(abbr: string | undefined): boolean {
+  if (!abbr) return true;
+  const a = canonicalTeam(abbr); // uppercases + de-aliases
+  if (a === "FA") return true;
+  const compact = a.replace(/[^A-Z0-9]/g, ""); // strip spaces, dashes, em-dashes
+  if (compact === "") return true; // "- - -", "---", "—"
+  if (/^\d+(TMS?|TEAMS?)$/.test(compact)) return true; // "2 TMS", "3 TEAMS"
+  return false;
+}
+
+/**
  * True when two team abbreviations clearly refer to different teams. Used to
  * reject same-name cross-provider matches. Returns false when either side is
- * blank (unknown → don't block the match).
+ * unknown (blank, "FA", or a multi-team marker → don't block the match).
  */
 export function teamsConflict(a: string | undefined, b: string | undefined): boolean {
-  if (!a || !b) return false;
-  // "FA"/"FA " (FantasyPros real-life free agent) means no MLB team → unknown, don't reject.
-  const ca = canonicalTeam(a);
-  const cb = canonicalTeam(b);
-  if (ca === "FA" || cb === "FA") return false;
-  return ca !== cb;
+  if (isUnknownTeam(a) || isUnknownTeam(b)) return false;
+  return canonicalTeam(a!) !== canonicalTeam(b!);
 }
